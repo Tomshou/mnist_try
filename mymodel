@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Dec  5 20:28:23 2018
+
+@author: shoutao
+"""
+
+# my lenet5
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Sun Nov 11 23:34:04 2018
+
+@author: shoutao
+"""
+#first try on MNIST
+import tensorflow as tf
+import numpy as np
+#import matplotlib 
+from tensorflow.examples.tutorials.mnist import input_data
+mnist_path="/Users/shoutao/Desktop/Python/MNIST_data"
+mnist=input_data.read_data_sets(mnist_path,one_hot=True)
+move_path='/Users/shoutao/Desktop/Python/my_model/my_model.ckpt'
+
+#mnist.train,mnist.validation,mnist.test
+#mnist.train.images,mnist.train.labels
+#tmp1=np.reshape(mnist.train.images[0:200],(200,28,28,1))
+
+learning_rate_base=1e-2
+input_node_size=28
+input_node=784
+color_channel=1
+output_nodes1=84
+output_nodes=10
+batch_sizes=100
+steps=550#50 epochs
+epochs=5
+#x=tf.placeholder(shape=[batch_sizes, input_node],
+#                 dtype=tf.float32)
+x=tf.placeholder(shape=[None, input_node],
+                 dtype=tf.float32)
+tf.add_to_collection('x',x)
+#x_image=tf.reshape(x,[batch_sizes, input_node_size,input_node_size,color_channel])
+#y=tf.placeholder(shape=[batch_sizes, output_nodes],dtype=tf.float32)
+y=tf.placeholder(shape=[None, output_nodes],dtype=tf.float32)
+tf.add_to_collection('y',y)
+#transform the train image into 28*28*1
+#x_new=tf.reshape(x,[-1,28,28,1])
+
+#define a easy network one convolutional one maxpool and no dropout 
+def inference(input_tensor):
+    input_image=tf.reshape(input_tensor, [-1,28,28,1])
+    with tf.variable_scope('conv_l1'):
+        weight1=tf.get_variable('weight1', shape=[5,5,1,6],
+                                initializer=tf.truncated_normal_initializer(mean=0,stddev=1))
+        bias1=tf.get_variable('bias1',shape=[6],
+                               initializer=tf.truncated_normal_initializer(mean=0,stddev=1))
+        
+        result_tmp1_l1=tf.nn.conv2d(input_image, weight1, strides=[1,1,1,1],padding='VALID')
+        result_tmp2_l1=tf.nn.tanh(tf.nn.bias_add(result_tmp1_l1,bias1))
+    with tf.variable_scope('avgpool_l2'):
+        result_tmp1_l2=tf.nn.avg_pool(result_tmp2_l1, ksize=[1,2,2,1], strides=[1,2,2,1],
+                                      padding='VALID')
+    with tf.variable_scope('conv_l3'):
+        weight3=tf.get_variable('weight3', shape=[5,5,6,16],
+                                initializer=tf.truncated_normal_initializer(mean=0,stddev=1))
+        bias3=tf.get_variable('bias3',shape=[16],
+                               initializer=tf.truncated_normal_initializer(mean=0,stddev=1))
+        result_tmp1_l3=tf.nn.conv2d(result_tmp1_l2, weight3, strides=[1,1,1,1],padding='VALID')
+        result_tmp2_l3=tf.nn.tanh(tf.nn.bias_add(result_tmp1_l3,bias3))
+    with tf.variable_scope('avgpool_l4'):
+        result_tmp1_l4=tf.nn.avg_pool(result_tmp2_l3, ksize=[1,4,4,1], strides=[1,2,2,1],
+                                      padding='VALID')  
+    with tf.variable_scope('conv_l5'):
+        weight5=tf.get_variable('weight5', shape=[2,2,16,120],
+                                initializer=tf.truncated_normal_initializer(mean=0,stddev=1))
+        bias5=tf.get_variable('bias5',shape=[120],
+                               initializer=tf.truncated_normal_initializer(mean=0,stddev=1))
+        result_tmp1_l5=tf.nn.conv2d(result_tmp1_l4, weight5, strides=[1,1,1,1],padding='VALID')
+        result_tmp2_l5=tf.nn.tanh(tf.nn.bias_add(result_tmp1_l5,bias5))
+        pool_shape=result_tmp2_l5.get_shape().as_list()
+        nodes=pool_shape[1]*pool_shape[2]*pool_shape[3]
+        reshaped=tf.reshape(result_tmp2_l5,shape=[-1,nodes])
+    with tf.variable_scope('fc_l6'):
+        weight6=tf.get_variable('weight6',shape=[nodes,output_nodes1],
+                                initializer=tf.truncated_normal_initializer(mean=0,stddev=1))
+        bias6=tf.get_variable('bias6',shape=[output_nodes1],
+                              initializer=tf.truncated_normal_initializer(mean=0,stddev=1))
+        result_tmp1_l6=tf.nn.dropout(tf.nn.tanh(tf.matmul(reshaped,weight6)+bias6),keep_prob=0.5)
+    with tf.variable_scope('fc_l7'):
+        weight7=tf.get_variable('weight7',shape=[output_nodes1,output_nodes],
+                                initializer=tf.truncated_normal_initializer(mean=0,stddev=1))
+        bias7=tf.get_variable('bias7',shape=[output_nodes],
+                              initializer=tf.truncated_normal_initializer(mean=0,stddev=1))
+        result_tmp1_l7=tf.matmul(result_tmp1_l6,weight7)+bias7
+        #result_tmp2_l7=tf.nn.softmax(result_tmp1_l7,axis=1)
+    return(result_tmp1_l7)
+
+y_inference=inference(x)
+loss=tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits_v2(labels=y,logits=y_inference))
+#loss=-tf.reduce_sum(tf.multiply(y,tf.log(tf.clip_by_value(y_inference,1e-3,0.999))))
+#optimizer=tf.train.AdamOptimizer(learning_rate_base).minimize(loss)
+optimizer=tf.train.AdamOptimizer(learning_rate_base).minimize(loss)
+
+#anglyze the performance of the network
+prediction=tf.equal(tf.argmax(y_inference,1),tf.argmax(y,1))
+accuracy=tf.reduce_mean(tf.cast(prediction,dtype=tf.float32))
+tf.add_to_collection('accuracy',accuracy)#easy to reuse the model
+#save the model and parameter
+
+with tf.Session() as sess:
+    init=tf.global_variables_initializer()
+    sess.run(init)
+    saver=tf.train.Saver(max_to_keep=1)
+    max_acc=0
+    for j in range(epochs):
+        for i in range(steps):
+            train_images,train_labels=mnist.train.next_batch(batch_size=batch_sizes)
+            sess.run(optimizer,feed_dict={x:train_images,y:train_labels})
+            if i%10==0:
+                local_loss=sess.run(loss,feed_dict={x:train_images,y:train_labels})
+                print('In %s epochs, At %s step, train loss: %s' 
+                      %(j,i,local_loss))
+                if i%100==0:
+                    total_accuracy=sess.run(accuracy, 
+                                                          feed_dict={x:mnist.train.images,y:mnist.train.labels})
+                    print('total accuracy: %s' % total_accuracy)
+                    if total_accuracy>=max_acc:
+                        max_acc=total_accuracy
+                        saver.save(sess,move_path)
+    
+#import tensorflow as tf
+#sess=tf.Session()
+#saver = tf.train.import_meta_graph('/Users/shoutao/Desktop/Python/my_model/my_model.ckpt.meta')
+#saver.restore(sess,'/Users/shoutao/Desktop/Python/my_model/my_model.ckpt')
+#graph = tf.get_default_graph()
+#accuracy=tf.get_collection('accuracy')
+#print('accuracy is %s' % 
+#               sess.run(accuracy, feed_dict={x:mnist.test.images,y:mnist.test.labels}))
+#with tf.Session() as sess:
+#    init=tf.global_variables_initializer()
+#    sess.run(init)
+#    #saver=tf.train.Saver(max_to_keep=5)
+#    for i in range(steps):
+#        train_images,train_labels=mnist.train.next_batch(batch_size=batch_sizes)
+#        sess.run(optimizer,feed_dict={x:train_images,y:train_labels})
+#        if i%100==0:
+#            print('At %s step, total loss: %s' 
+#                  %(i,sess.run(loss,feed_dict={x:train_images,y:train_labels})))
+#            print('the accuracy: %s' % sess.run(accuracy, 
+#                                                feed_dict={x:train_images,y:train_labels}))      
+#At 10000 step, total loss: 51719.266
+#the accuracy: 0.70205456
+
+#next work is to save the model and predict the validset
