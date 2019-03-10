@@ -1,0 +1,86 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Wed Dec 19 16:07:23 2018
+
+@author: shoutao
+"""
+
+import tensorflow as tf
+from tensorflow.examples.tutorials.mnist import input_data
+import numpy as np 
+from tensorflow.contrib import rnn
+#hyper parameter
+learningrate=1e-4
+input_size=28
+num_step=28
+class_size=10
+batch_size=tf.placeholder(tf.int32,[],name='batch')
+hiden_size=200
+layer_num=2
+epoch=2
+steps=550
+
+#dataset
+mnist_path="/Users/shoutao/Desktop/Python/MNIST_data"
+mnist=input_data.read_data_sets(mnist_path,one_hot=True)
+move_path='/Users/shoutao/Desktop/Python/lstm_model/lstm_model.ckpt'
+
+#placeholder
+x_=tf.placeholder(shape=[None,784],dtype=tf.float32,name='x_')
+#issate=tf.placeholder(shape=[None,2*hiden_size],dtype=tf.float32)
+y=tf.placeholder(shape=[None,class_size],dtype=tf.float32,name='y')
+
+weight=tf.Variable(tf.random_normal([hiden_size,class_size]),dtype=tf.float32,name='weight')
+bias=tf.Variable(tf.random_normal([class_size]),dtype=tf.float32,name='bias')
+#weight={
+#'hiden':tf.Variable(tf.random_normal([input_size,hiden_size]),dtype=tf.float32),
+#'out':tf.Variable(tf.random_normal([hiden_size,class_size]),dtype=tf.float32)
+#}
+#bias={
+#'hiden':tf.Variable(tf.random_normal([hiden_size]),dtype=tf.float32),
+#'out':tf.Variable(tf.random_normal([class_size]),dtype=tf.float32)
+#}
+
+def unit_lstm():
+	lstmcell=rnn.BasicLSTMCell(hiden_size,state_is_tuple=True)
+	return(lstmcell)
+def MYLSTM(input):
+	tmp=tf.reshape(input,[-1,num_step,input_size])
+	mlstm_cell=rnn.MultiRNNCell([unit_lstm() for _ in range(3)], state_is_tuple=True)
+	init_state=mlstm_cell.zero_state(batch_size,dtype=tf.float32)
+	outputs, states=tf.nn.dynamic_rnn(cell=mlstm_cell,inputs=tmp, initial_state=init_state,time_major=False)
+	with tf.variable_scope('out'):
+		results=tf.matmul(outputs[:,-1,:],weight)+bias
+		softmax_output=tf.nn.softmax(results)
+	return(softmax_output)
+ 
+predict=MYLSTM(x_)
+loss=-tf.reduce_sum(tf.multiply(y,tf.log(tf.clip_by_value(predict,0.001,0.999))))
+optimizer=tf.train.AdamOptimizer(learningrate).minimize(loss)
+accuracy_1=tf.equal(tf.argmax(predict,1),tf.argmax(y,1))
+accuracy=tf.reduce_mean(tf.cast(accuracy_1,'float'))
+tf.add_to_collection('predict',predict)
+#cross_entropy=-tf.reduce_sum(y*tf.log(tf.clip_by_value(predict,0.001,0.999)))
+#optimizer=tf.train.AdamOptimizer(learningrate).minimize(cross_entropy)
+
+#saver=tf.train.Saver(max_to_keep=1)
+with tf.Session() as sess:
+	init=tf.global_variables_initializer()
+	sess.run(init)
+	#saver=tf.train.Saver(max_to_keep=1)
+	saver=tf.train.Saver(max_to_keep=1)
+	max_acc=0
+	for j in range(steps):
+		_batch_size=100
+		train_mnist,label_mnist=mnist.train.next_batch(_batch_size)
+		sess.run(optimizer,feed_dict={x_:train_mnist,y:label_mnist ,batch_size:_batch_size})
+		if j%50==0:
+			validation_loss=sess.run(loss,feed_dict={x_:mnist.validation.images,y:mnist.validation.labels,batch_size:5000})
+			validation_accuracy=sess.run(accuracy,feed_dict={x_:mnist.validation.images,y:mnist.validation.labels,batch_size:5000})
+			print('at %s steps, test loss is %s and test accuracy is %s' % 
+			(j,validation_loss,validation_accuracy))
+			if validation_accuracy>=max_acc:
+				max_acc=validation_accuracy
+				saver.save(sess,move_path)
+
+                
